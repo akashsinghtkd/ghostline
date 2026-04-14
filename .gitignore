@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local editor/tooling state
+.claude/
+CLAUDE.md
+AGENTS.md
+
+# runtime-generated data
+/data/
+/public/generated/
