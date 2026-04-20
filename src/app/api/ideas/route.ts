@@ -36,6 +36,15 @@ export async function GET(req: Request) {
   return NextResponse.json({ ideas });
 }
 
+export async function DELETE(req: Request) {
+  const { searchParams } = new URL(req.url);
+  const id = searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+  const ok = await storage.deleteIdea(id);
+  if (!ok) return NextResponse.json({ error: "Idea not found" }, { status: 404 });
+  return NextResponse.json({ ok: true });
+}
+
 export async function POST(req: Request) {
   try {
     const body = Body.parse(await req.json());
@@ -49,47 +58,48 @@ export async function POST(req: Request) {
     const focusTags = profile.focusTags ?? [];
     const ideaFormats = profile.ideaFormats ?? [];
     const goals = profile.goals ?? [];
+    const sources = profile.sources ?? [];
+
     const focusBlock = focusTags.length
-      ? `\n\nFocus tags (REQUIRED — every idea must clearly relate to at least one): ${focusTags.join(", ")}`
+      ? `\n\nTopics the author wants to post about: ${focusTags.join(", ")}`
       : "";
     const formatBlock = ideaFormats.length
-      ? `\n\nPreferred idea formats (distribute across the set): ${ideaFormats.join(", ")}. Map each idea's contentType field to the closest of: story, insight, how-to, opinion, listicle, case-study.`
+      ? `\n\nPreferred idea formats: ${ideaFormats.join(", ")}. Map contentType to the closest of: story, insight, how-to, opinion, listicle, case-study.`
       : "";
     const goalBlock = goals.length
-      ? `\n\nUser's goals (EVERY idea must advance at least one): ${goals.join(", ")}. For each idea, 'reasoning' should explicitly name which goal(s) it serves and how.`
+      ? `\n\nAuthor's goals (every idea should advance at least one): ${goals.join(", ")}.`
       : "";
-
-    const directives = [
-      focusTags.length
-        ? "Anchor every idea to the user's focus tags — these define the niche they want to build in."
-        : null,
-      ideaFormats.length
-        ? "Match the user's preferred idea formats — e.g. problem-solving pieces, user stories, comparisons, how-tos, contrarian takes."
-        : null,
-      goals.length
-        ? "Treat the user's goals as non-negotiable: e.g. if attracting freelance clients, demonstrate tangible outcomes (revenue lifted, hours saved, bugs squashed), signal availability, and surface proof of craft; if growing reach, favor high-save / high-share formats (frameworks, contrarian takes, behind-the-scenes) that non-followers will repost."
-        : null,
-    ].filter(Boolean);
+    const sourceBlock = sources.length
+      ? `\n\nSource material the author wants ideas drawn from:\n${sources
+          .slice(-5)
+          .map(
+            (s, idx) =>
+              `[${idx + 1}] ${s.title} — ${s.url}\n  Summary: ${s.summary}\n  Key points: ${s.keyPoints.join("; ")}`,
+          )
+          .join("\n")}`
+      : "";
 
     const { object } = await generateObject({
       model,
       schema: IdeasSchema,
-      system: `You are a senior LinkedIn content strategist. Generate ${count} distinct, scroll-stopping post ideas tailored to the user's voice, industry, and audience.
-Hooks must be one or two punchy lines that earn the click. Vary content types. Estimate engagement realistically (0-100) using the user's likely reach signals.${
-        directives.length ? " " + directives.join(" ") : ""
-      }`,
-      prompt: `Profile JSON:\n${JSON.stringify(
+      system: `You are a ghostwriter who thinks in first-person for a working practitioner. Generate ${count} LinkedIn post ideas that sound like a tired developer typing at 11pm — specific, opinionated, lived-in. Not a thought-leader spouting frameworks.
+
+Voice rules (strict):
+- Write hooks like a human would say them out loud, not like a marketer. Contractions allowed. Sentence fragments allowed.
+- No AI-tells: no "elevate", "leverage", "unlock", "dive into", "in today's world", "game-changer", "seamless", "robust", "journey", "empower", "harness the power", "revolutionize", "cutting-edge", em-dashes in hooks.
+- Every idea must carry a specific, concrete artifact: a real number, a named tool, a visible mistake, a pull-quote you can imagine a human actually saying.
+- Vary rhythm across the ${count} ideas — mix short punchy hooks with longer confessional ones.
+- If source material is supplied, ground at least half the ideas in specifics from that source (quote numbers, name the thing, reference an example).
+
+Engagement estimate should be realistic for a small-to-medium account (mostly 30-70, occasional 80+).`,
+      prompt: `Author context:\n${JSON.stringify(
         {
-          name: profile.name,
           headline: profile.headline,
-          about: profile.about,
-          experience: profile.experience.slice(0, 5),
-          skills: profile.skills.slice(0, 20),
           tone: profile.tone,
         },
         null,
         2,
-      )}${focusBlock}${formatBlock}${goalBlock}`,
+      )}${focusBlock}${formatBlock}${goalBlock}${sourceBlock}`,
     });
 
     const now = new Date().toISOString();

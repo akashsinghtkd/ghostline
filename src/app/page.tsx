@@ -1,13 +1,8 @@
 "use client";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Badge, Button, Card, Label, Spinner } from "@/components/ui";
+import { Badge, Button, Card, Input, Label, Spinner } from "@/components/ui";
 import { ModelToggle } from "@/components/ModelToggle";
-import {
-  FOCUS_TAG_SUGGESTIONS,
-  GOAL_SUGGESTIONS,
-  IDEA_FORMAT_SUGGESTIONS,
-  TagInput,
-} from "@/components/TagInput";
+import { TagInput, TOPIC_SUGGESTIONS } from "@/components/TagInput";
 import { PostDetail } from "@/components/PostDetail";
 import type {
   AIProvider,
@@ -46,12 +41,19 @@ export default function Home() {
   const [history, setHistory] = useState<GeneratedPost[]>([]);
   const [detailPost, setDetailPost] = useState<GeneratedPost | null>(null);
 
-  const [step, setStep] = useState<{ ideas: Status; post: Status; image: Status }>({
+  const [step, setStep] = useState<{
+    ideas: Status;
+    post: Status;
+    image: Status;
+    url: Status;
+  }>({
     ideas: "idle",
     post: "idle",
     image: "idle",
+    url: "idle",
   });
   const [error, setError] = useState<string | null>(null);
+  const [sourceUrl, setSourceUrl] = useState("");
 
   const refreshHistory = useCallback(async (profileId?: string) => {
     const qs = profileId ? `?profileId=${profileId}` : "";
@@ -79,40 +81,60 @@ export default function Home() {
     loadContext();
   }, [loadContext]);
 
-  async function saveContext(focusTags: string[], ideaFormats: string[], goals: string[]) {
+  async function onChangeTopics(topics: string[]) {
     const r = await fetch("/api/context", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ focusTags, ideaFormats, goals }),
+      body: JSON.stringify({ focusTags: topics, ideaFormats: [], goals: [] }),
     });
     const j = await r.json();
     if (!r.ok) {
-      setError(j.error ?? "Failed to save context");
-      return null;
+      setError(j.error ?? "Failed to save topics");
+      return;
     }
     setProfile(j.profile);
-    return j.profile as LinkedInProfile;
   }
 
-  async function onChangeFocusTags(tags: string[]) {
-    if (!profile) return;
-    await saveContext(tags, profile.ideaFormats ?? [], profile.goals ?? []);
+  async function onAnalyzeUrl() {
+    if (!profile || !sourceUrl.trim()) return;
+    setError(null);
+    setStep((s) => ({ ...s, url: "loading" }));
+    try {
+      const r = await fetch("/api/analyze-url", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ url: sourceUrl.trim(), profileId: profile.id, provider }),
+      });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error ?? "Failed to analyze URL");
+      setProfile(j.profile);
+      setSourceUrl("");
+      setStep((s) => ({ ...s, url: "idle" }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to analyze URL");
+      setStep((s) => ({ ...s, url: "error" }));
+    }
   }
 
-  async function onChangeIdeaFormats(tags: string[]) {
+  async function onRemoveSource(sourceId: string) {
     if (!profile) return;
-    await saveContext(profile.focusTags ?? [], tags, profile.goals ?? []);
-  }
-
-  async function onChangeGoals(tags: string[]) {
-    if (!profile) return;
-    await saveContext(profile.focusTags ?? [], profile.ideaFormats ?? [], tags);
+    const r = await fetch("/api/analyze-url", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ profileId: profile.id, sourceId }),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      setError(j.error ?? "Failed to remove source");
+      return;
+    }
+    setProfile(j.profile);
   }
 
   async function onGenerateIdeas() {
     if (!profile) return;
     if (!profile.focusTags.length) {
-      setError("Add at least one focus tag first.");
+      setError("Add at least one topic first.");
       return;
     }
     setError(null);
@@ -131,6 +153,29 @@ export default function Home() {
       setError(e instanceof Error ? e.message : "Idea generation failed");
       setStep((s) => ({ ...s, ideas: "error" }));
     }
+  }
+
+  async function onDeleteIdea(id: string) {
+    const r = await fetch(`/api/ideas?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setError(j.error ?? "Failed to delete idea");
+      return;
+    }
+    if (selectedIdea?.id === id) setSelectedIdea(null);
+    if (profile) await loadIdeas(profile.id);
+  }
+
+  async function onDeletePost(id: string) {
+    const r = await fetch(`/api/history?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      setError(j.error ?? "Failed to delete post");
+      return;
+    }
+    if (post?.id === id) setPost(null);
+    if (detailPost?.id === id) setDetailPost(null);
+    if (profile) await refreshHistory(profile.id);
   }
 
   async function onGeneratePost() {
@@ -187,7 +232,7 @@ export default function Home() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Ghostline</h1>
           <p className="text-sm text-zinc-500">
-            AI LinkedIn ghostwriter — tags in, posts out.
+            AI LinkedIn ghostwriter — topics in, posts out.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -206,39 +251,90 @@ export default function Home() {
         <div className="space-y-6">
           <Card>
             <h2 className="mb-4 text-sm font-semibold uppercase tracking-wide text-zinc-500">
-              1. Setup
+              1. Topics
             </h2>
             {profile ? (
               <div className="space-y-6">
                 <TagInput
-                  label="Focus tags"
+                  label="What do you want to post about?"
                   tags={profile.focusTags ?? []}
-                  suggestions={FOCUS_TAG_SUGGESTIONS}
-                  placeholder="e.g. Full-stack developer, React / Next.js"
-                  emptyHint="Add what you want to post about. Required."
-                  onChange={onChangeFocusTags}
+                  suggestions={TOPIC_SUGGESTIONS}
+                  placeholder="e.g. Full-stack development, Freelance projects"
+                  emptyHint="Add a few topics — ideas will be generated from these."
+                  onChange={onChangeTopics}
                 />
-                <TagInput
-                  label="Goals"
-                  tags={profile.goals ?? []}
-                  suggestions={GOAL_SUGGESTIONS}
-                  placeholder="e.g. Attract freelance clients, Grow reach"
-                  emptyHint="What should every post drive? Freelance leads, reach, credibility."
-                  onChange={onChangeGoals}
-                />
-                <TagInput
-                  label="Idea formats (optional)"
-                  tags={profile.ideaFormats ?? []}
-                  suggestions={IDEA_FORMAT_SUGGESTIONS}
-                  placeholder="e.g. Problem-solving, Comparison / vs"
-                  emptyHint="Shape what kinds of ideas are generated — stories, comparisons, how-tos."
-                  onChange={onChangeIdeaFormats}
-                />
+                <div className="space-y-2">
+                  <Label>Or analyze a URL</Label>
+                  <div className="flex gap-2">
+                    <Input
+                      value={sourceUrl}
+                      onChange={(e) => setSourceUrl(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          onAnalyzeUrl();
+                        }
+                      }}
+                      placeholder="https://example.com/article"
+                      className="h-9 text-sm"
+                    />
+                    <Button
+                      size="sm"
+                      onClick={onAnalyzeUrl}
+                      disabled={!sourceUrl.trim() || step.url === "loading"}
+                    >
+                      {step.url === "loading" ? <Spinner /> : null}
+                      Analyze
+                    </Button>
+                  </div>
+                  <p className="text-xs text-zinc-500">
+                    Paste a blog post, docs page, or article. Topics from it get added to your list
+                    and ideas will draw from its specifics.
+                  </p>
+                  {(profile.sources ?? []).length > 0 && (
+                    <div className="mt-2 space-y-2">
+                      {profile.sources.map((s) => (
+                        <div
+                          key={s.id}
+                          className="group flex items-start gap-2 rounded-lg border border-zinc-200 bg-zinc-50 p-3 text-xs dark:border-zinc-800 dark:bg-zinc-950"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="mb-1 flex items-center gap-2">
+                              <span className="truncate font-medium text-zinc-800 dark:text-zinc-100">
+                                {s.title}
+                              </span>
+                              <a
+                                href={s.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="shrink-0 text-blue-600 hover:underline dark:text-blue-400"
+                              >
+                                ↗
+                              </a>
+                            </div>
+                            <div className="line-clamp-2 text-zinc-600 dark:text-zinc-400">
+                              {s.summary}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => onRemoveSource(s.id)}
+                            title="Remove source"
+                            className="shrink-0 rounded p-1 text-zinc-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950/40"
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M6 6l12 12M18 6L6 18" />
+                            </svg>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-2 text-sm text-zinc-500">
                 <Spinner />
-                Loading context…
+                Loading…
               </div>
             )}
           </Card>
@@ -262,31 +358,47 @@ export default function Home() {
               <p className="text-sm text-zinc-500">
                 {profile?.focusTags.length
                   ? "No ideas yet — click Generate."
-                  : "Add at least one focus tag to generate ideas."}
+                  : "Add at least one topic to generate ideas."}
               </p>
             ) : (
               <div className="grid gap-3 sm:grid-cols-2">
                 {ideas.map((i) => {
                   const active = selectedIdea?.id === i.id;
                   return (
-                    <button
+                    <div
                       key={i.id}
-                      onClick={() => setSelectedIdea(i)}
-                      className={`rounded-xl border p-4 text-left transition-all ${
+                      className={`group relative rounded-xl border p-4 text-left transition-all ${
                         active
                           ? "border-zinc-900 bg-zinc-50 shadow-sm dark:border-white dark:bg-zinc-800"
                           : "border-zinc-200 hover:border-zinc-400 dark:border-zinc-800 dark:hover:border-zinc-600"
                       }`}
                     >
-                      <div className="mb-2 flex items-center justify-between">
-                        <Badge>{i.contentType}</Badge>
-                        <span className="font-mono text-xs text-zinc-500">
-                          ⚡ {i.estimatedEngagement}
-                        </span>
-                      </div>
-                      <div className="mb-1 text-sm font-semibold">{i.title}</div>
-                      <div className="line-clamp-3 text-xs text-zinc-500">{i.hook}</div>
-                    </button>
+                      <button
+                        onClick={() => setSelectedIdea(i)}
+                        className="w-full text-left"
+                      >
+                        <div className="mb-2 flex items-center justify-between pr-6">
+                          <Badge>{i.contentType}</Badge>
+                          <span className="font-mono text-xs text-zinc-500">
+                            ⚡ {i.estimatedEngagement}
+                          </span>
+                        </div>
+                        <div className="mb-1 text-sm font-semibold">{i.title}</div>
+                        <div className="line-clamp-3 text-xs text-zinc-500">{i.hook}</div>
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteIdea(i.id);
+                        }}
+                        title="Delete idea"
+                        className="absolute right-2 top-2 rounded-md p-1 text-zinc-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950/40"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" />
+                        </svg>
+                      </button>
+                    </div>
                   );
                 })}
               </div>
@@ -385,7 +497,7 @@ export default function Home() {
                   Generate image ({imageStyle})
                 </Button>
               ) : null}
-              <div className="mt-4 flex items-center gap-2">
+              <div className="mt-4 flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
                   variant="secondary"
@@ -400,6 +512,14 @@ export default function Home() {
                   }
                 >
                   Copy
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onDeletePost(post.id)}
+                  className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-950/40"
+                >
+                  Delete
                 </Button>
               </div>
             </Card>
@@ -417,37 +537,54 @@ export default function Home() {
         ) : (
           <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
             {currentHistory.map((p) => (
-              <button
+              <div
                 key={p.id}
-                onClick={() => setDetailPost(p)}
-                className="rounded-2xl border border-zinc-200 bg-white p-5 text-left shadow-sm transition-all hover:border-zinc-400 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-zinc-400 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600"
+                className="group relative rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition-all hover:border-zinc-400 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-600"
               >
-                <div className="mb-2 flex items-center justify-between text-xs text-zinc-500">
-                  <span>{new Date(p.createdAt).toLocaleString()}</span>
-                  <Badge>{p.provider}</Badge>
-                </div>
-                <div className="mb-1 text-sm font-medium">{p.idea.title}</div>
-                <div className="line-clamp-4 text-xs text-zinc-600 dark:text-zinc-400">
-                  {p.content}
-                </div>
-                {p.imageUrl && (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={p.imageUrl}
-                    alt=""
-                    className="mt-2 rounded-lg border border-zinc-200 dark:border-zinc-800"
-                  />
-                )}
-                <div className="mt-3 text-xs font-medium text-zinc-500">
-                  View details →
-                </div>
-              </button>
+                <button
+                  onClick={() => setDetailPost(p)}
+                  className="w-full text-left focus-visible:outline-none"
+                >
+                  <div className="mb-2 flex items-center justify-between pr-6 text-xs text-zinc-500">
+                    <span>{new Date(p.createdAt).toLocaleString()}</span>
+                    <Badge>{p.provider}</Badge>
+                  </div>
+                  <div className="mb-1 text-sm font-medium">{p.idea.title}</div>
+                  <div className="line-clamp-4 text-xs text-zinc-600 dark:text-zinc-400">
+                    {p.content}
+                  </div>
+                  {p.imageUrl && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={p.imageUrl}
+                      alt=""
+                      className="mt-2 rounded-lg border border-zinc-200 dark:border-zinc-800"
+                    />
+                  )}
+                  <div className="mt-3 text-xs font-medium text-zinc-500">View details →</div>
+                </button>
+                <button
+                  onClick={() => {
+                    if (confirm("Delete this post?")) onDeletePost(p.id);
+                  }}
+                  title="Delete post"
+                  className="absolute right-3 top-3 rounded-md p-1.5 text-zinc-400 opacity-0 hover:bg-red-50 hover:text-red-600 group-hover:opacity-100 dark:hover:bg-red-950/40"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6h14z" />
+                  </svg>
+                </button>
+              </div>
             ))}
           </div>
         )}
       </section>
 
-      <PostDetail post={detailPost} onClose={() => setDetailPost(null)} />
+      <PostDetail
+        post={detailPost}
+        onClose={() => setDetailPost(null)}
+        onDelete={onDeletePost}
+      />
 
       <footer className="mt-16 border-t border-zinc-200 pt-6 text-xs text-zinc-500 dark:border-zinc-800">
         JSON storage in <code>/data</code>. Images in <code>/public/generated</code>. Swap in a DB

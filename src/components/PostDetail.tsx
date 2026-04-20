@@ -6,9 +6,11 @@ import type { GeneratedPost } from "@/lib/types";
 export function PostDetail({
   post,
   onClose,
+  onDelete,
 }: {
   post: GeneratedPost | null;
   onClose: () => void;
+  onDelete?: (id: string) => void | Promise<void>;
 }) {
   useEffect(() => {
     if (!post) return;
@@ -147,6 +149,20 @@ export function PostDetail({
           {post.imageUrl && (
             <Button size="sm" variant="outline" onClick={() => window.open(post.imageUrl, "_blank")}>
               Open image
+            </Button>
+          )}
+          {onDelete && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                if (confirm("Delete this post?")) {
+                  onDelete(post.id);
+                }
+              }}
+              className="border-red-300 text-red-600 hover:bg-red-50 dark:border-red-900/50 dark:hover:bg-red-950/40"
+            >
+              Delete
             </Button>
           )}
           <Button size="sm" onClick={onClose} className="ml-auto">

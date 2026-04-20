@@ -31,6 +31,7 @@ export const storage = {
       focusTags: p.focusTags ?? [],
       ideaFormats: p.ideaFormats ?? [],
       goals: p.goals ?? [],
+      sources: p.sources ?? [],
     }));
   },
   async getProfile(id: string): Promise<LinkedInProfile | null> {
@@ -64,6 +65,13 @@ export const storage = {
     await writeJson(IDEAS_FILE, all);
     return ideas;
   },
+  async deleteIdea(id: string): Promise<boolean> {
+    const all = await ensureFile<PostIdea[]>(IDEAS_FILE, []);
+    const next = all.filter((i) => i.id !== id);
+    if (next.length === all.length) return false;
+    await writeJson(IDEAS_FILE, next);
+    return true;
+  },
 
   async listPosts(profileId?: string): Promise<GeneratedPost[]> {
     const all = await ensureFile<GeneratedPost[]>(POSTS_FILE, []);
@@ -75,6 +83,13 @@ export const storage = {
     all.push(post);
     await writeJson(POSTS_FILE, all);
     return post;
+  },
+  async deletePost(id: string): Promise<boolean> {
+    const all = await ensureFile<GeneratedPost[]>(POSTS_FILE, []);
+    const next = all.filter((p) => p.id !== id);
+    if (next.length === all.length) return false;
+    await writeJson(POSTS_FILE, next);
+    return true;
   },
   async updatePost(id: string, patch: Partial<GeneratedPost>): Promise<GeneratedPost | null> {
     const all = await ensureFile<GeneratedPost[]>(POSTS_FILE, []);

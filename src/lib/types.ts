@@ -8,6 +8,16 @@ export type ToneProfile = {
   industry: string;
 };
 
+export type Source = {
+  id: string;
+  url: string;
+  title: string;
+  summary: string;
+  keyPoints: string[];
+  topics: string[];
+  fetchedAt: string;
+};
+
 export type LinkedInProfile = {
   id: string;
   url: string;
@@ -27,6 +37,7 @@ export type LinkedInProfile = {
   focusTags: string[];
   ideaFormats: string[];
   goals: string[];
+  sources: Source[];
   tone: ToneProfile;
   createdAt: string;
   updatedAt: string;

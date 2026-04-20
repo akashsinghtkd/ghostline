@@ -101,6 +101,7 @@ Always derive the tone block: voice (1 sentence), formality, 3-6 recurring theme
     focusTags: [],
     ideaFormats: [],
     goals: [],
+    sources: [],
     tone: object.tone,
     createdAt: now,
     updatedAt: now,

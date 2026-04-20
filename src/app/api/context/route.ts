@@ -35,6 +35,7 @@ function synthesize(
     focusTags,
     ideaFormats,
     goals,
+    sources: [],
     tone: {
       voice:
         "Direct, opinionated practitioner — concrete examples over jargon, short paragraphs, first-person",

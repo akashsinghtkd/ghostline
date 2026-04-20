@@ -98,50 +98,18 @@ export function TagInput({
   );
 }
 
-export const FOCUS_TAG_SUGGESTIONS = [
-  "Full-stack developer",
-  "Freelance / consulting",
+export const TOPIC_SUGGESTIONS = [
+  "Full-stack development",
   "React / Next.js",
   "Node.js",
   "TypeScript",
-  "Web development",
-  "SaaS building",
+  "Freelance projects",
+  "Building in public",
+  "SaaS",
   "AI / ML",
   "DevOps",
-  "Mobile",
-  "UX design",
+  "Developer productivity",
+  "Career advice",
   "Open source",
-  "Developer tools",
-  "Cloud / infra",
-  "Startup founder",
 ];
 
-export const GOAL_SUGGESTIONS = [
-  "Attract freelance clients",
-  "Grow reach / followers",
-  "Show technical expertise",
-  "Share case studies & results",
-  "Build in public",
-  "Generate inbound leads",
-  "Thought leadership",
-  "Teach / educate peers",
-  "Get hired (full-time)",
-  "Signal availability",
-];
-
-export const IDEA_FORMAT_SUGGESTIONS = [
-  "Problem-solving",
-  "User story",
-  "Comparison / vs",
-  "How-to tutorial",
-  "Contrarian take",
-  "Lessons learned",
-  "Behind the scenes",
-  "Case study",
-  "Data-driven",
-  "Personal anecdote",
-  "Myth busting",
-  "Framework / mental model",
-  "Listicle",
-  "Before / after",
-];
